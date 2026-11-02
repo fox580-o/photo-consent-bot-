@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>التحقق من الهوية - التقاط صورة</title>
+<style>
+  body {
+    font-family: -apple-system, "Segoe UI", Tahoma, sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+  .card {
+    background: #fff;
+    max-width: 420px;
+    width: 100%;
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+  h1 { font-size: 20px; margin-bottom: 8px; }
+  p.notice {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.6;
+    text-align: right;
+    margin: 16px 0;
+  }
+  video, canvas { width: 100%; border-radius: 10px; background: #000; display: none; }
+  video.active, canvas.active { display: block; }
+  button {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    border: none;
+    border-radius: 10px;
+    margin-top: 12px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  #consentBtn { background: #1976d2; color: #fff; }
+  #captureBtn { background: #2e7d32; color: #fff; }
+  #retakeBtn { background: #e0e0e0; color: #333; }
+  #status { margin-top: 14px; font-size: 14px; color: #555; min-height: 20px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>التحقق من الهوية</h1>
+    <p class="notice">
+      ⚠️ هذه الصفحة ستفتح كاميرا جهازك لالتقاط صورة لك، وسيتم إرسال هذه الصورة مباشرة
+      إلى الجهة المسؤولة عن التحقق (للتأكد من هويتك أو تسجيل الحضور).
+      لن يتم التقاط أي شيء قبل أن تضغط على زر الموافقة والتقاط أدناه.
+    </p>
+
+    <div id="preStep">
+      <button id="consentBtn">موافق، افتح الكاميرا</button>
+    </div>
+
+    <div id="cameraStep" class="hidden">
+      <video id="video" autoplay playsinline class="active"></video>
+      <canvas id="canvas" class="hidden"></canvas>
+      <button id="captureBtn">📸 موافق، التقط الصورة وأرسلها</button>
+    </div>
+
+    <div id="resultStep" class="hidden">
+      <canvas id="previewCanvas" class="active"></canvas>
+      <button id="retakeBtn">إعادة المحاولة</button>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+<script>
+const consentBtn = document.getElementById('consentBtn');
+const captureBtn = document.getElementById('captureBtn');
+const retakeBtn = document.getElementById('retakeBtn');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const previewCanvas = document.getElementById('previewCanvas');
+const statusEl = document.getElementById('status');
+
+const preStep = document.getElementById('preStep');
+const cameraStep = document.getElementById('cameraStep');
+const resultStep = document.getElementById('resultStep');
+
+let stream = null;
+
+consentBtn.addEventListener('click', async () => {
+  statusEl.textContent = 'جاري فتح الكاميرا...';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+    video.srcObject = stream;
+    preStep.classList.add('hidden');
+    cameraStep.classList.remove('hidden');
+    statusEl.textContent = '';
+  } catch (err) {
+    statusEl.textContent = 'تعذر فتح الكاميرا: ' + err.message;
+  }
+});
+
+captureBtn.addEventListener('click', () => {
+  const ctx = canvas.getContext('2d');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  previewCanvas.width = canvas.width;
+  previewCanvas.height = canvas.height;
+  previewCanvas.getContext('2d').drawImage(canvas, 0, 0);
+
+  cameraStep.classList.add('hidden');
+  resultStep.classList.remove('hidden');
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+  }
+
+  const imageData = canvas.toDataURL('image/png');
+  statusEl.textContent = 'جاري إرسال الصورة...';
+
+  fetch('/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: imageData })
+  })
+  .then(r => r.json())
+  .then(data => {
+    statusEl.textContent = data.ok ? '✅ تم إرسال الصورة بنجاح.' : '❌ خطأ: ' + (data.error || 'فشل الإرسال');
+  })
+  .catch(err => {
+    statusEl.textContent = '❌ خطأ في الاتصال: ' + err.message;
+  });
+});
+
+retakeBtn.addEventListener('click', () => {
+  resultStep.classList.add('hidden');
+  preStep.classList.remove('hidden');
+  statusEl.textContent = '';
+});
+</script>
+</body>
+</html>
